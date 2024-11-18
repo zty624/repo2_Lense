@@ -61,17 +61,6 @@ class Plotter:
         return pd.DataFrame(self.header.items(), columns=['Key', 'Value'])
 ```
 
-```python
-class BH:
-    def __init__(self, mass: float, distance: float, x: float, y: float):
-        self.mass = mass            # Solar masses
-        self.distance = distance    # Mpc
-        self.x = x                  # x-coordinate(pixel)
-        self.y = y                  # y-coordinate(pixel)
-    
-    def __str__(self) -> str:
-        return f'BH(mass={self.mass}, distance={self.distance}, x={self.x}, y={self.y})'
-```
 ### 动画实现
 
 使用 `matplotlib.animation` 包绘制 gif 动图。
@@ -90,3 +79,60 @@ def animation(images: list, output: str = None):
     if output:
         anime.save(os.path.join(DATA_DIR, output + ".gif"), writer='imagemagick')
 ```
+
+### 引力透镜变换
+
+本项目作如下近似：
+
+1. 原图像在天球上所张的立体角远小于 1，以至于在此范围内可以使用平面近似。
+2. 黑洞距离地球足够远，使得旁轴条件成立，可以使用简单的方程。
+
+本题建模如下：
+
+1. 采用简单的反向光线追迹法，假想望远镜发出了射向原目标范围 $(-\theta_0 \sim \theta_0, -\theta_0 \sim \theta_0)$ 的光线集。
+2. 对光线集施加一个黑洞带来的额外的偏折，使得原来朝向 $(\theta_x, \theta_y)$ 的光线最终射到了 $(\theta_x', \theta_y')$ 的背景上。
+3. 将 $(\theta_x', \theta_y')$ 上的亮度投影到 $(\theta_x, \theta_y)$ 的坐标上。
+
+```python
+class Plotter:
+    def apply_lensing(self, bh: BH):
+        # Constants
+        D_l = bh.distance * mpc          # Lens distance in meters
+        D_s = BG_DISTANCE * mpc          # Source distance in meters
+        D_ls = D_s - D_l                 # Distance between lens and source
+        M = bh.mass * Msun               # Mass in kg
+
+        # Pixel grid
+        y_indices, x_indices = np.indices(self.data.shape)
+        x = (x_indices - bh.x) * self.xscale  # x in radians
+        y = (y_indices - bh.y) * self.yscale  # y in radians
+        theta = np.sqrt(x**2 + y**2)          # Angular position
+        epsilon = 1e-6
+        theta = np.where(theta == 0, epsilon, theta)    # replace zero with eps
+
+        # Mapping
+        alpha = (4 * G0 * M) / (c0**2 * theta * D_l)    # Deflection angle
+        theta_s = theta - alpha * (D_ls / D_s)          # Source position
+        theta_s_over_theta = theta_s / theta            # Magnification
+        x_s = x * theta_s_over_theta                    # x in radians
+        y_s = y * theta_s_over_theta                    # y in radians
+        x_s_px = x_s / self.xscale + bh.x               # convert back to x_px
+        y_s_px = y_s / self.yscale + bh.y               # convert back to y_px
+
+        # Directly output
+        lensed = np.zeros(self.data.shape)
+        valid = (x_s_px >= 0) & (x_s_px < self.data.shape[1]) & (y_s_px >= 0) & (y_s_px < self.data.shape[0])
+        x_s_px = x_s_px[valid]
+        y_s_px = y_s_px[valid]
+        lensed[y_indices[valid], x_indices[valid]] = self.data[y_s_px.astype(int), x_s_px.astype(int)]
+
+        # Interpolate the image
+        # coords = np.array([y_s_px.flatten(), x_s_px.flatten()])
+        # lensed_flat = map_coordinates(self.data, coords, order=1, mode='nearest')
+        # lensed = lensed_flat.reshape(self.data.shape)
+        return lensed
+```
+
+## 输出结果
+
+此处缺失 gif

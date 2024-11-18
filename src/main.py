@@ -1,3 +1,4 @@
+from scipy.ndimage import map_coordinates
 import matplotlib.animation as ani
 import matplotlib.pyplot as plt
 import astropy.io.fits as fits
@@ -54,25 +55,40 @@ class Plotter:
             fig.savefig(output)
     
     def apply_lensing(self, bh: BH):
-        rs = 2 * G0 * bh.mass * Msun / c0**2    # Schwarzschild radius
-        # center the black hole at (0, 0)
-        ypx0, xpx0 = np.indices(self.data.shape)
-        xpx = xpx0 - bh.x
-        ypx = ypx0 - bh.y
+        # Constants
+        D_l = bh.distance * mpc          # Lens distance in meters
+        D_s = BG_DISTANCE * mpc          # Source distance in meters
+        D_ls = D_s - D_l                 # Distance between lens and source
+        M = bh.mass * Msun               # Mass in kg
 
-        theta = np.sqrt((xpx * self.xscale)**2 + (ypx * self.yscale)**2)
-        b = theta * bh.distance * mpc + 1e5
-        alpha = 2 * rs/ (b)
-        r = np.sqrt(xpx ** 2 + ypx ** 2) + 1e5
+        # Pixel grid
+        y_indices, x_indices = np.indices(self.data.shape)
+        x = (x_indices - bh.x) * self.xscale  # x in radians
+        y = (y_indices - bh.y) * self.yscale  # y in radians
+        theta = np.sqrt(x**2 + y**2)          # Angular position
+        epsilon = 1e-6
+        theta = np.where(theta == 0, epsilon, theta)    # replace zero with eps
 
-        new_xpx = xpx - alpha / r * xpx * (BG_DISTANCE - bh.distance) / BG_DISTANCE / self.xscale
-        new_ypx = ypx - alpha / r * ypx * (BG_DISTANCE - bh.distance) / BG_DISTANCE / self.yscale
-        new_xpx = np.clip(new_xpx.astype(int) + bh.x, 0, self.data.shape[1] - 1)
-        new_ypx = np.clip(new_ypx.astype(int) + bh.y, 0, self.data.shape[0] - 1)
+        # Mapping
+        alpha = (4 * G0 * M) / (c0**2 * theta * D_l)    # Deflection angle
+        theta_s = theta - alpha * (D_ls / D_s)          # Source position
+        theta_s_over_theta = theta_s / theta            # Magnification
+        x_s = x * theta_s_over_theta                    # x in radians
+        y_s = y * theta_s_over_theta                    # y in radians
+        x_s_px = x_s / self.xscale + bh.x               # convert back to x_px
+        y_s_px = y_s / self.yscale + bh.y               # convert back to y_px
 
-        lensed = np.zeros_like(self.data)
-        cut = (new_xpx >= 0) & (new_xpx < self.data.shape[1]) & (new_ypx >= 0) & (new_ypx < self.data.shape[0])
-        lensed[new_ypx[cut], new_xpx[cut]] = self.data[ypx0[cut], xpx0[cut]]
+        # Directly output
+        lensed = np.zeros(self.data.shape)
+        valid = (x_s_px >= 0) & (x_s_px < self.data.shape[1]) & (y_s_px >= 0) & (y_s_px < self.data.shape[0])
+        x_s_px = x_s_px[valid]
+        y_s_px = y_s_px[valid]
+        lensed[y_indices[valid], x_indices[valid]] = self.data[y_s_px.astype(int), x_s_px.astype(int)]
+
+        # Interpolate the image
+        # coords = np.array([y_s_px.flatten(), x_s_px.flatten()])
+        # lensed_flat = map_coordinates(self.data, coords, order=1, mode='nearest')
+        # lensed = lensed_flat.reshape(self.data.shape)
         return lensed
 
 def animation(units: list, images: list, itval: int, output: str = None):
@@ -94,21 +110,17 @@ if __name__ == "__main__":
         newPlotter = Plotter(read(os.path.join(DATA_DIR, file)))
         newPlotter.plot(output=os.path.join(DATA_DIR, file.replace('.fits', '.png')), show=False)
 
-        # # 1. change mass
-        # masses = np.logspace(15, 16.5, 100)
-        # images = [newPlotter.apply_lensing(BH(mass, 10, 522, 424)) for mass in masses]
-        masses = np.logspace(15, 16.5, 100)
+        # 1. change mass
+        masses = np.logspace(11, 14, 100)
         images = [newPlotter.apply_lensing(BH(mass, 10, 385, 510)) for mass in masses]
-        # masses = np.logspace(15, 16.5, 100)
-        # images = [newPlotter.apply_lensing(BH(mass, 10, 522, 424)) for mass in masses]
-        animation(masses, images, 100, output=file.replace('.fits', '_lensing1_1'))
+        animation(masses, images, 100, output=file.replace('.fits', '_lensing1'))
 
-        # # 2. change distance
-        # dists = np.linspace(1, 15, 100)
-        # images = [newPlotter.apply_lensing(BH(1e15, dist, 300, 300)) for dist in dists]
-        # animation(dists, images, 100, output=file.replace('.fits', '_lensing2'))
+        # 2. change distance
+        dists = np.linspace(1, 16, 100)
+        images = [newPlotter.apply_lensing(BH(1e13, dist, 300, 300)) for dist in dists]
+        animation(dists, images, 100, output=file.replace('.fits', '_lensing2'))
 
         # 3. change position
-        # xs = np.linspace(100, 500, 201, dtype=int)
-        # images = [newPlotter.apply_lensing(BH(1e15, 2, x, 260)) for x in xs]
-        # animation(xs, images, 100, output=file.replace('.fits', '_lensing3'))
+        xs = np.linspace(100, 500, 101, dtype=int)
+        images = [newPlotter.apply_lensing(BH(1e13, 10, x, 300)) for x in xs]
+        animation(xs, images, 100, output=file.replace('.fits', '_lensing3'))
