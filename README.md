@@ -135,4 +135,11 @@ class Plotter:
 
 ## 输出结果
 
-此处缺失 gif
+### BH Variables: mass = logspace(11, 14, 100) Msun, distance = 10 mpc
+![lensing_1](https://github.com/zty624/repo2_Lense/blob/main/src/data/NGC_1300_I_IIIaJ_dss1_lensing1.gif)
+
+### BH Variables: mass = 1e13 Msun, distance = linspace(1, 16, 100) mpc
+![lensing_2](https://github.com/zty624/repo2_Lense/blob/main/src/data/NGC_1300_I_IIIaJ_dss1_lensing2.gif)
+
+### BH Variables: mass = 1e13 Msun, distance = 10 mpc, moving
+![lensing_3](https://github.com/zty624/repo2_Lense/blob/main/src/data/NGC_1300_I_IIIaJ_dss1_lensing3.gif)
